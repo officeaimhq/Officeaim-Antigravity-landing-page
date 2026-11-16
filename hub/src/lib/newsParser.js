@@ -130,6 +130,7 @@ export function parseTransmissionMarkdown(rawText) {
     }
 
     let cleanDescription = text;
+    cleanDescription = cleanDescription.replace(/^\s*=+\s*NOTEBOOKLM[\s\S]*$/im, '');
     cleanDescription = cleanDescription.replace(/^(?:SEO\s*title|Title):\s*[^\n\r]+(?:\r?\n)?/im, '');
     cleanDescription = cleanDescription.replace(/^#\s+[^\n\r]+(?:\r?\n)?/m, '');
     cleanDescription = cleanDescription.replace(/^(?:Category|Categor[ií]a):\s*[^\n\r]+(?:\r?\n)?/im, '');
@@ -138,6 +139,20 @@ export function parseTransmissionMarkdown(rawText) {
     cleanDescription = cleanDescription.replace(/\[INSERT_[A-Z0-9_]+_EMBED_HERE\]/gi, '');
     cleanDescription = stripLegacyNewsMetadata(cleanDescription);
     cleanDescription = cleanDescription.replace(/^[\s\r\n\-=_]+/, '').trim();
+
+    if (title) {
+        const descLines = cleanDescription.split('\n');
+        while (descLines.length > 0 && !descLines[0].trim()) {
+            descLines.shift();
+        }
+        if (descLines.length > 0) {
+            const firstClean = descLines[0].trim().replace(/^[#*_\s]+/, '').replace(/[#*_\s]+$/, '');
+            if (firstClean.toLowerCase() === title.toLowerCase()) {
+                descLines.shift();
+                cleanDescription = descLines.join('\n').trim();
+            }
+        }
+    }
 
     description = cleanDescription;
 

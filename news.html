@@ -1074,12 +1074,16 @@
                 let replacement = '';
                 if (preservedMap.has(lowerCore)) {
                     replacement = preservedMap.get(lowerCore);
+                } else if (lowerCore === 'i' || /^i['’](m|ve|ll|d)$/i.test(coreWord)) {
+                    replacement = 'I' + coreWord.slice(1).toLowerCase();
                 } else if (/^v\d+(\.\d+)?$/i.test(coreWord)) {
                     replacement = coreWord.toLowerCase();
                 } else if (/^\d+(\.\d+)?$/.test(coreWord)) {
                     replacement = coreWord;
                 } else if (isStartOfSentence) {
                     replacement = coreWord.charAt(0).toUpperCase() + coreWord.slice(1).toLowerCase();
+                } else if (/[A-Z]/.test(coreWord)) {
+                    replacement = coreWord;
                 } else {
                     replacement = coreWord.toLowerCase();
                 }
