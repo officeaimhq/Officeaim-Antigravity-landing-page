@@ -19,10 +19,18 @@ import {
     Clipboard,
     ChevronDown,
     Check,
-    Tag
+    Tag,
+    RefreshCw
 } from 'lucide-react';
 import { useNews } from '../context/NewsContext';
 import { extractYouTubeId, getYouTubeEmbedUrl, getYouTubeThumbnailUrl } from '../lib/youtube';
+import { supabase } from '../lib/supabase';
+import {
+    parseTransmissionMarkdown,
+    stripLegacyNewsMetadata,
+    calculateReadingTimeMinutes,
+    formatVideoDuration
+} from '../lib/newsParser';
 import toast from 'react-hot-toast';
 
 const DEFAULT_CATEGORIES = [
@@ -36,80 +44,37 @@ const DEFAULT_CATEGORIES = [
     'Case Studies'
 ];
 
-/**
- * Robust markdown parser tailored for OfficeAIM AI Agent dispatches
- */
-export const parseTransmissionMarkdown = (rawText) => {
-    if (!rawText || typeof rawText !== 'string') return null;
-    const text = rawText.trim();
-    if (!text) return null;
-
-    let title = '';
-    let category = '';
-    let youtube_url = '';
-    let description = '';
-
-    // 1. YouTube Link Extraction
-    const ytMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[^\s\)]*)/i);
-    if (ytMatch) {
-        youtube_url = ytMatch[0];
+async function fetchYouTubeDurationForVideoId(videoId) {
+    const checkedAt = new Date().toISOString();
+    if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        return { durationSeconds: null, checkedAt: null };
     }
-
-    // 2. Title Extraction
-    const seoTitleMatch = text.match(/SEO\s*title:\s*([^\n\r]+?)(?:\s*Suggested\s*slug:|\s*Meta\s*description:|\n|$)/i);
-    const explicitTitleMatch = text.match(/^Title:\s*([^\n\r]+)/im);
-    const h1Match = text.match(/^#\s+([^\n\r]+)/m);
-
-    if (seoTitleMatch && seoTitleMatch[1].trim()) {
-        title = seoTitleMatch[1].trim();
-    } else if (explicitTitleMatch && explicitTitleMatch[1].trim()) {
-        title = explicitTitleMatch[1].trim();
-    } else if (h1Match && h1Match[1].trim()) {
-        title = h1Match[1].trim();
-    } else {
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length > 0) {
-            title = lines[0].replace(/^[#*_\s]+/, '').replace(/[#*_\s]+$/, '');
+    try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (!accessToken) {
+            return { durationSeconds: null, checkedAt };
         }
-    }
-
-    // 3. Category Extraction
-    const categoryMatch = text.match(/(?:Category|Categor[ií]a):\s*([^\n\r]+)/i);
-    if (categoryMatch && categoryMatch[1].trim()) {
-        category = categoryMatch[1].trim().replace(/^[*_]+|[*_]+$/g, '');
-    } else {
-        const lower = text.toLowerCase();
-        if (lower.includes('video') || lower.includes('hyperframes') || lower.includes('animat')) {
-            category = 'Generative AI';
-        } else if (lower.includes('visual') || lower.includes('image') || lower.includes('banana')) {
-            category = 'Generative Visuals';
-        } else if (lower.includes('agent') || lower.includes('openbot') || lower.includes('autonomous')) {
-            category = 'Autonomous Agents';
-        } else if (lower.includes('prompt') || lower.includes('meta-prompt')) {
-            category = 'Prompt Architecture';
-        } else {
-            category = 'AI Workflow Strategy';
+        const res = await fetch('/.netlify/functions/youtube-duration', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ videoId }),
+        });
+        if (!res.ok) {
+            return { durationSeconds: null, checkedAt };
         }
+        const data = await res.json().catch(() => ({}));
+        return {
+            durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : null,
+            checkedAt: data.checkedAt || checkedAt,
+        };
+    } catch {
+        return { durationSeconds: null, checkedAt };
     }
-
-    // 4. Description / Content: Strip leading metadata lines already extracted into separate fields
-    let cleanDescription = text;
-    // Strip leading title lines
-    cleanDescription = cleanDescription.replace(/^(?:SEO\s*title|Title):\s*[^\n\r]+(?:\r?\n)?/im, '');
-    cleanDescription = cleanDescription.replace(/^#\s+[^\n\r]+(?:\r?\n)?/m, '');
-    // Strip Category & Date lines
-    cleanDescription = cleanDescription.replace(/^(?:Category|Categor[ií]a):\s*[^\n\r]+(?:\r?\n)?/im, '');
-    cleanDescription = cleanDescription.replace(/^(?:Date|Fecha):\s*[^\n\r]+(?:\r?\n)?/im, '');
-    cleanDescription = cleanDescription.replace(/^(?:Officeaim Newsroom metadata|Metadata):\s*[^\n\r]+(?:\r?\n)?/im, '');
-    // Strip placeholder tokens
-    cleanDescription = cleanDescription.replace(/\[INSERT_[A-Z0-9_]+_EMBED_HERE\]/gi, '');
-    // Strip leading divider rules or extra whitespace
-    cleanDescription = cleanDescription.replace(/^[\s\r\n\-\=\_]+/, '').trim();
-
-    description = cleanDescription || text;
-
-    return { title, category, youtube_url, description };
-};
+}
 
 export const NewsManager = () => {
     const { news, loading, fetchNews, createNews, updateNews, deleteNews } = useNews();
@@ -121,6 +86,7 @@ export const NewsManager = () => {
 
     // Dynamic categories tracked locally in-session + extracted from database
     const [customCategories, setCustomCategories] = useState([]);
+    const [refreshingId, setRefreshingId] = useState(null);
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -305,10 +271,26 @@ export const NewsManager = () => {
 
         setSubmitting(true);
         const finalCategory = formData.category.trim() || 'Generative AI';
+        const ytId = extractYouTubeId(formData.youtube_url);
+        const prevYtId = editingItem ? extractYouTubeId(editingItem.youtube_url) : null;
+        const isVideoNewOrChanged = Boolean(ytId) && ytId !== prevYtId;
+
+        let durationFields = {};
+        if (!ytId) {
+            durationFields = { video_duration_seconds: null, video_duration_checked_at: null };
+        } else if (isVideoNewOrChanged) {
+            const { durationSeconds, checkedAt } = await fetchYouTubeDurationForVideoId(ytId);
+            durationFields = {
+                video_duration_seconds: durationSeconds,
+                video_duration_checked_at: checkedAt
+            };
+        }
+
         const payload = {
             ...formData,
             category: finalCategory,
-            published_at: new Date(formData.published_at).toISOString()
+            published_at: new Date(formData.published_at).toISOString(),
+            ...durationFields
         };
 
         if (editingItem) {
@@ -319,6 +301,21 @@ export const NewsManager = () => {
 
         setSubmitting(false);
         setIsModalOpen(false);
+    };
+
+    const handleRefreshDuration = async (item) => {
+        const ytId = extractYouTubeId(item.youtube_url);
+        if (!ytId) return;
+        setRefreshingId(item.id);
+        try {
+            const { durationSeconds, checkedAt } = await fetchYouTubeDurationForVideoId(ytId);
+            await updateNews(item.id, {
+                video_duration_seconds: durationSeconds,
+                video_duration_checked_at: checkedAt
+            });
+        } finally {
+            setRefreshingId(null);
+        }
     };
 
     // Delete handler
@@ -484,21 +481,31 @@ export const NewsManager = () => {
 
                                     {/* Body */}
                                     <div className="p-5">
-                                        <div className="flex items-center gap-2 text-[10px] text-text-muted mb-2 font-mono">
-                                            <Clock className="w-3 h-3 text-cyan-400" />
-                                            <span>{new Date(item.published_at || item.created_at).toLocaleDateString()}</span>
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted mb-2 font-mono">
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <Clock className="w-3 h-3 text-cyan-400" />
+                                                <span>{new Date(item.published_at || item.created_at).toLocaleDateString()}</span>
+                                            </span>
+                                            <span className="text-cyan-300/90">
+                                                Reading time: {calculateReadingTimeMinutes(item.description)} min
+                                            </span>
+                                            {formatVideoDuration(item.video_duration_seconds) && (
+                                                <span className="text-emerald-300/90">
+                                                    {formatVideoDuration(item.video_duration_seconds)}
+                                                </span>
+                                            )}
                                         </div>
                                         <h3 className="text-base font-bold text-white mb-2 line-clamp-2 group-hover:text-cyan-300 transition-colors">
                                             {item.title}
                                         </h3>
                                         <p className="text-xs text-text-muted line-clamp-3">
-                                            {item.description || 'No description provided.'}
+                                            {stripLegacyNewsMetadata(item.description) || 'No description provided.'}
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Actions */}
-                                <div className="p-5 pt-0 border-t border-white/5 flex items-center justify-between gap-2 mt-4">
+                                <div className="p-5 pt-0 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 mt-4">
                                     <div className="flex items-center gap-2">
                                         {item.youtube_url && (
                                             <a
@@ -510,6 +517,18 @@ export const NewsManager = () => {
                                             >
                                                 <ExternalLink className="w-4 h-4" />
                                             </a>
+                                        )}
+                                        {ytId && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRefreshDuration(item)}
+                                                disabled={refreshingId === item.id}
+                                                className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-cyan-500/20 hover:text-cyan-300 text-white/75 font-semibold text-[11px] flex items-center gap-1.5 transition-colors border border-white/5 hover:border-cyan-500/30 disabled:opacity-50"
+                                                title="Refresh video duration from YouTube"
+                                            >
+                                                <RefreshCw className={`w-3 h-3 ${refreshingId === item.id ? 'animate-spin' : ''}`} />
+                                                Refresh duration
+                                            </button>
                                         )}
                                     </div>
 

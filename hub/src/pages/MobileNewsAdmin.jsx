@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { toSentenceCase, extractYouTubeId, isYouTubePublished } from '../lib/youtube';
+import { parseTransmissionMarkdown as parseNewsMarkdown } from '../lib/newsParser';
 import { Link } from 'react-router-dom';
 
 const OFFICIAL_CATEGORIES = [
@@ -21,85 +22,15 @@ const OFFICIAL_CATEGORIES = [
 ];
 
 export const parseTransmissionMarkdown = (rawText) => {
-    if (!rawText || typeof rawText !== 'string') return {};
-
-    const text = rawText.trim();
-    const lines = text.split(/\r?\n/).map(l => l.trim());
-
-    let title = '';
-    let category = '';
-    let youtube_url = '';
-    let date = '';
-
-    // 1. Extract Title
-    const titleMatch = text.match(/^(?:Title|SEO title):\s*(.+)$/im);
-    if (titleMatch && titleMatch[1]) {
-        title = titleMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
-    } else {
-        const h1Match = text.match(/^#\s+(.+)$/m);
-        if (h1Match && h1Match[1]) {
-            title = h1Match[1].replace(/^\*\*|\*\*$/g, '').trim();
-        } else if (lines.length > 0 && lines[0].length > 5 && !lines[0].startsWith('---') && !lines[0].toLowerCase().startsWith('category')) {
-            title = lines[0].replace(/^\*\*|\*\*$/g, '').trim();
-        }
-    }
-
-    // 2. Extract Category
-    const categoryMatch = text.match(/^(?:Category|Categoría):\s*(.+)$/im);
-    if (categoryMatch && categoryMatch[1]) {
-        category = categoryMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
-    }
-
-    // 3. Extract YouTube URL
-    const ytMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
-    if (ytMatch && ytMatch[0]) {
-        youtube_url = ytMatch[0].trim();
-    } else if (/youtube:\s*not published/i.test(text) || /video:\s*not published/i.test(text) || /not published/i.test(text)) {
-        youtube_url = 'Not published';
-    }
-
-    // 4. Extract Date
-    const dateMatch = text.match(/^(?:Date|Fecha):\s*(.+)$/im);
-    if (dateMatch && dateMatch[1]) {
-        date = dateMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
-    }
-
-    // 5. Clean Transmission Body
-    let cleanLines = [];
-    let hasSkippedHeader = false;
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const lower = line.toLowerCase();
-
-        if (!hasSkippedHeader) {
-            if (!line) continue;
-            if (title && line.toLowerCase() === title.toLowerCase()) continue;
-            if (lower.startsWith('title:') || lower.startsWith('seo title:') || lower.startsWith('# ')) continue;
-            if (lower.startsWith('category:') || lower.startsWith('categoría:')) continue;
-            if (lower.startsWith('date:') || lower.startsWith('fecha:')) continue;
-            if (lower.startsWith('officeaim newsroom metadata:') || lower.startsWith('metadata:')) continue;
-            if (lower.startsWith('---') || lower.startsWith('===')) continue;
-            if (lower.startsWith('https://youtu.be') || lower.startsWith('https://www.youtube.com')) continue;
-            if (lower.startsWith('youtube:') || lower.startsWith('video:')) continue;
-            if (lower.includes('[insert_') && lower.includes('_embed_here]')) continue;
-            hasSkippedHeader = true;
-        }
-
-        if (lower.includes('[insert_') && lower.includes('_embed_here]')) continue;
-        if (youtube_url && line === youtube_url) continue;
-
-        cleanLines.push(lines[i]);
-    }
-
-    let description = cleanLines.join('\n').trim();
-
+    const parsed = parseNewsMarkdown(rawText);
+    if (!parsed) return {};
+    const dateMatch = rawText.match(/^(?:Date|Fecha):\s*(.+)$/im);
     return {
-        title: title ? toSentenceCase(title) : '',
-        category,
-        youtube_url: youtube_url || 'Not published',
-        date,
-        description
+        title: parsed.title ? toSentenceCase(parsed.title) : '',
+        category: parsed.category || '',
+        youtube_url: parsed.youtube_url || 'Not published',
+        date: dateMatch?.[1] ? dateMatch[1].replace(/^\*\*|\*\*$/g, '').trim() : '',
+        description: parsed.description || ''
     };
 };
 
