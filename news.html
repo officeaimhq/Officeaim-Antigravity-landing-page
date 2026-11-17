@@ -1419,7 +1419,7 @@
                 let origin = window.location.origin || 'https://officeaimhq.netlify.app';
                 mediaHtml = `
                     <div style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-top-left-radius: 28px; border-top-right-radius: 28px; overflow: hidden;">
-                        <iframe src="https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(origin)}" title="${toSentenceCase(item.title).replace(/"/g, '&quot;')}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width: 100%; height: 100%; border: none;"></iframe>
+                        <iframe src="https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(origin)}" title="${(item.title || '').replace(/"/g, '&quot;')}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width: 100%; height: 100%; border: none;"></iframe>
                     </div>
                 `;
             } else {
@@ -1465,7 +1465,7 @@
                         ${videoDurationText ? `<span>•</span><span style="color: #34d399;">${videoDurationText}</span>` : ''}
                     </div>
                     <h2 style="font-size: 1.85rem; font-weight: 900; font-style: italic; color: white; line-height: 1.25; margin-bottom: 24px; letter-spacing: -0.5px;">
-                        ${toSentenceCase(item.title)}
+                        ${item.title || ''}
                     </h2>
                     ${bodyHtml}
                     <div style="margin-top: 36px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: flex-end;">
@@ -1547,7 +1547,7 @@
                                     ${videoDurationText ? `<span style="color: rgba(255,255,255,0.25);">•</span><span style="color: #34d399;">${videoDurationText}</span>` : ''}
                                 </div>
                                 <h3 style="font-size: 1.25rem; font-weight: 700; color: white; margin-bottom: 12px; line-height: 1.35; cursor: pointer;" onclick="openArticleModal(${index})">
-                                    ${toSentenceCase(item.title)}
+                                    ${item.title || ''}
                                 </h3>
                                 <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 0;">
                                     ${excerpt}

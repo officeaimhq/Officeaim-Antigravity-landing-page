@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Calendar, ChevronRight, X, Clock, Newspaper, Youtube, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { extractYouTubeId, getYouTubeEmbedUrl, getYouTubeThumbnailUrl, isYouTubePublished, toSentenceCase } from '../lib/youtube';
+import { extractYouTubeId, getYouTubeEmbedUrl, getYouTubeThumbnailUrl, isYouTubePublished } from '../lib/youtube';
 import { vlogs as fallbackVlogs } from './newsData';
 
 const OFFICIAL_LINKS = [
@@ -527,7 +527,7 @@ const VlogNewsPage = ({ profile }) => {
                                                     <span>{displayDate}</span>
                                                 </div>
                                                 <h3 className="text-lg font-bold text-white mb-2 leading-tight group-hover:text-cyan-400 transition-colors">
-                                                    {toSentenceCase(item.title)}
+                                                    {item.title}
                                                 </h3>
                                                 <p className="text-sm text-text-muted mb-4 line-clamp-3 leading-relaxed">
                                                     {getCleanExcerpt(item.description, item.title)}
@@ -634,7 +634,7 @@ const VlogNewsPage = ({ profile }) => {
                                 </div>
 
                                 <h1 className="text-2xl md:text-3xl font-black italic tracking-tight text-white mb-6 leading-tight">
-                                    {toSentenceCase(selectedNews.title)}
+                                    {selectedNews.title}
                                 </h1>
 
                                 <div className="mb-6">

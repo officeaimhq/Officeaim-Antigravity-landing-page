@@ -26,7 +26,7 @@ export const parseTransmissionMarkdown = (rawText) => {
     if (!parsed) return {};
     const dateMatch = rawText.match(/^(?:Date|Fecha):\s*(.+)$/im);
     return {
-        title: parsed.title ? toSentenceCase(parsed.title) : '',
+        title: parsed.title || '',
         category: parsed.category || '',
         youtube_url: parsed.youtube_url || 'Not published',
         date: dateMatch?.[1] ? dateMatch[1].replace(/^\*\*|\*\*$/g, '').trim() : '',
@@ -116,7 +116,7 @@ const MobileNewsAdmin = ({ profile }) => {
 
         setFormData(prev => ({
             ...prev,
-            title: parsed.title ? toSentenceCase(parsed.title) : prev.title,
+            title: parsed.title || prev.title,
             category: OFFICIAL_CATEGORIES.includes(catToSet) ? catToSet : 'CUSTOM',
             youtube_url: parsed.youtube_url || prev.youtube_url || 'Not published',
             description: parsed.description || prev.description
@@ -150,7 +150,7 @@ const MobileNewsAdmin = ({ profile }) => {
         setSubmitting(true);
         try {
             const payload = {
-                title: toSentenceCase(finalTitle),
+                title: finalTitle,
                 category: finalCategory,
                 youtube_url: finalYouTubeUrl,
                 description: formData.description.trim(),
@@ -206,7 +206,7 @@ const MobileNewsAdmin = ({ profile }) => {
         }
 
         setFormData({
-            title: toSentenceCase(item.title),
+            title: item.title || '',
             category: isOfficial ? item.category : 'CUSTOM',
             youtube_url: item.youtube_url || 'Not published',
             description: item.description || '',
@@ -542,7 +542,7 @@ const MobileNewsAdmin = ({ profile }) => {
                                         </div>
 
                                         <h3 className="text-xs font-bold text-white mb-3 line-clamp-2 leading-relaxed">
-                                            {toSentenceCase(item.title)}
+                                            {item.title}
                                         </h3>
 
                                         {/* Actions */}
