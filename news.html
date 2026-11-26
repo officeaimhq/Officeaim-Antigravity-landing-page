@@ -1074,12 +1074,16 @@
                 let replacement = '';
                 if (preservedMap.has(lowerCore)) {
                     replacement = preservedMap.get(lowerCore);
+                } else if (lowerCore === 'i' || /^i['’](m|ve|ll|d)$/i.test(coreWord)) {
+                    replacement = 'I' + coreWord.slice(1).toLowerCase();
                 } else if (/^v\d+(\.\d+)?$/i.test(coreWord)) {
                     replacement = coreWord.toLowerCase();
                 } else if (/^\d+(\.\d+)?$/.test(coreWord)) {
                     replacement = coreWord;
                 } else if (isStartOfSentence) {
                     replacement = coreWord.charAt(0).toUpperCase() + coreWord.slice(1).toLowerCase();
+                } else if (/[A-Z]/.test(coreWord)) {
+                    replacement = coreWord;
                 } else {
                     replacement = coreWord.toLowerCase();
                 }
@@ -1112,11 +1116,76 @@
             document.body.style.overflow = 'auto';
         }
 
+        const LEGACY_META_LINE_RE = /^(?:Reading\s*time|Estimated\s*Video|Primary\s*target\s*keyword|Matching\s*PAA\s*questions?)\s*:/i;
+        const DECORATIVE_RULE_RE = /^\s*[=-](?:[\s=-]*[=-])?\s*$/;
+
+        function stripLegacyNewsMetadata(rawText) {
+            if (!rawText || typeof rawText !== 'string') return '';
+            return rawText
+                .replace(/\r\n/g, '\n')
+                .split('\n')
+                .filter((line) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return true;
+                    if (LEGACY_META_LINE_RE.test(trimmed)) return false;
+                    if (DECORATIVE_RULE_RE.test(trimmed)) return false;
+                    return true;
+                })
+                .join('\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+
+        function calculateReadingTimeMinutes(rawText) {
+            const cleaned = stripLegacyNewsMetadata(rawText);
+            if (!cleaned) return 1;
+            const lines = cleaned.split('\n');
+            const bodyLines = [];
+            let inExcludedBlock = false;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                const headingNormalized = trimmed.replace(/^#{1,6}\s*/, '').replace(/\*\*/g, '').trim();
+                if (/^(?:sources\s*(?:&|and)\s*highlights|explore\s+officeaim)\b/i.test(headingNormalized)) {
+                    inExcludedBlock = true;
+                    continue;
+                }
+                if (inExcludedBlock && /^#{1,3}\s+/.test(trimmed)) {
+                    inExcludedBlock = false;
+                }
+                if (!inExcludedBlock && trimmed) {
+                    bodyLines.push(trimmed);
+                }
+            }
+
+            const plainText = bodyLines
+                .join(' ')
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                .replace(/https?:\/\/\S+/g, ' ')
+                .replace(/[#*_`>]/g, ' ')
+                .trim();
+            if (!plainText) return 1;
+            const words = plainText.split(/\s+/).filter(Boolean).length;
+            return Math.max(1, Math.ceil(words / 200));
+        }
+
+        function formatVideoDuration(seconds) {
+            if (seconds === null || seconds === undefined) return '';
+            const num = Number(seconds);
+            if (!Number.isFinite(num) || num <= 0) return '';
+            const total = Math.round(num);
+            const mins = Math.floor(total / 60);
+            const secs = total % 60;
+            if (mins > 0 && secs > 0) return `Video: ${mins} min ${secs} s`;
+            if (mins > 0) return `Video: ${mins} min`;
+            return `Video: ${secs} s`;
+        }
+
         // Clean excerpt generator
         function getCleanExcerpt(rawText, title) {
             if (!rawText) return '';
             const normalizedTitle = (title || '').trim().toLowerCase();
-            const lines = rawText.split(/\r?\n/).map(l => l.trim());
+            const lines = stripLegacyNewsMetadata(rawText).split(/\r?\n/).map(l => l.trim());
             const cleanLines = [];
 
             for (const line of lines) {
@@ -1152,7 +1221,7 @@
             const normalizedTitle = (title || '').trim().toLowerCase();
             const cleanYtUrl = (youtubeUrl || '').trim();
 
-            let text = content.replace(/\r\n/g, '\n');
+            let text = stripLegacyNewsMetadata(content);
             text = text.replace(/(?:^|\n)\s*([•\-\*])\s*\n+([^\n]+)/g, '\n$1 $2');
             text = text.replace(/(?:^|\n)\s*(\d+\.)\s*\n+([^\n]+)/g, '\n$1 $2');
 
@@ -1350,7 +1419,7 @@
                 let origin = window.location.origin || 'https://officeaimhq.netlify.app';
                 mediaHtml = `
                     <div style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-top-left-radius: 28px; border-top-right-radius: 28px; overflow: hidden;">
-                        <iframe src="https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(origin)}" title="${toSentenceCase(item.title).replace(/"/g, '&quot;')}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width: 100%; height: 100%; border: none;"></iframe>
+                        <iframe src="https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(origin)}" title="${(item.title || '').replace(/"/g, '&quot;')}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width: 100%; height: 100%; border: none;"></iframe>
                     </div>
                 `;
             } else {
@@ -1381,17 +1450,22 @@
             }
 
             const bodyHtml = renderMarkdownBody(item.description, item.title, item.youtube_url);
+            const readingTimeMin = calculateReadingTimeMinutes(item.description);
+            const videoDurationText = hasVideo ? formatVideoDuration(item.video_duration_seconds) : '';
 
             modalContent.innerHTML = `
                 ${mediaHtml}
                 <div style="padding: 32px 36px 40px 36px; max-height: calc(85vh - 200px); overflow-y: auto;">
-                    <div style="display: flex; align-items: center; gap: 10px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent-primary); margin-bottom: 16px;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent-primary); margin-bottom: 16px;">
                         <span style="background: rgba(0,242,254,0.1); border: 1px solid rgba(0,242,254,0.3); padding: 4px 10px; border-radius: 6px;">${category}</span>
                         <span>•</span>
                         <span>${displayDate}</span>
+                        <span>•</span>
+                        <span style="color: #cbd5e1;">Reading time: ${readingTimeMin} min</span>
+                        ${videoDurationText ? `<span>•</span><span style="color: #34d399;">${videoDurationText}</span>` : ''}
                     </div>
                     <h2 style="font-size: 1.85rem; font-weight: 900; font-style: italic; color: white; line-height: 1.25; margin-bottom: 24px; letter-spacing: -0.5px;">
-                        ${toSentenceCase(item.title)}
+                        ${item.title || ''}
                     </h2>
                     ${bodyHtml}
                     <div style="margin-top: 36px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: flex-end;">
@@ -1440,6 +1514,8 @@
                 const displayDate = new Date(item.published_at || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 const excerpt = getCleanExcerpt(item.description, item.title);
                 const category = item.category || 'Generative AI';
+                const readingTimeMin = calculateReadingTimeMinutes(item.description);
+                const videoDurationText = hasVideo ? formatVideoDuration(item.video_duration_seconds) : '';
 
                 return `
                     <div class="glass-card" style="padding: 0; overflow: hidden; border-radius: 24px; border: 1px solid rgba(0, 242, 254, 0.3); box-shadow: 0 0 25px rgba(0, 242, 254, 0.08); display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 35px rgba(0,242,254,0.18)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 0 25px rgba(0, 242, 254, 0.08)';">
@@ -1464,11 +1540,14 @@
                                 ` : ''}
                             </div>
                             <div style="padding: 24px;">
-                                <div style="display: flex; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-primary); margin-bottom: 12px;">
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-primary); margin-bottom: 12px;">
                                     <span>${displayDate}</span>
+                                    <span style="color: rgba(255,255,255,0.25);">•</span>
+                                    <span style="color: #cbd5e1;">Reading time: ${readingTimeMin} min</span>
+                                    ${videoDurationText ? `<span style="color: rgba(255,255,255,0.25);">•</span><span style="color: #34d399;">${videoDurationText}</span>` : ''}
                                 </div>
                                 <h3 style="font-size: 1.25rem; font-weight: 700; color: white; margin-bottom: 12px; line-height: 1.35; cursor: pointer;" onclick="openArticleModal(${index})">
-                                    ${toSentenceCase(item.title)}
+                                    ${item.title || ''}
                                 </h3>
                                 <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 0;">
                                     ${excerpt}
@@ -1490,12 +1569,18 @@
             if (!grid) return;
 
             try {
-                const response = await fetch(`${SUPABASE_URL}/rest/v1/news?published=eq.true&order=published_at.desc`, {
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
-                });
+                const fullSelect = 'id,title,description,youtube_url,category,published,published_at,created_at,video_duration_seconds,video_duration_checked_at';
+                const baseSelect = 'id,title,description,youtube_url,category,published,published_at,created_at';
+                const headers = {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                };
+
+                let response = await fetch(`${SUPABASE_URL}/rest/v1/news?select=${fullSelect}&published=eq.true&order=published_at.desc`, { headers });
+                if (!response.ok) {
+                    // Fallback if migration 027 columns are not yet applied in DB
+                    response = await fetch(`${SUPABASE_URL}/rest/v1/news?select=${baseSelect}&published=eq.true&order=published_at.desc`, { headers });
+                }
 
                 if (!response.ok) throw new Error('Supabase news fetch failed: ' + response.status);
                 const data = await response.json();

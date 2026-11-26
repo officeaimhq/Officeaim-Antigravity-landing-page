@@ -45,7 +45,9 @@ export const NewsProvider = ({ children }) => {
                 youtube_url: newItem.youtube_url?.trim() || null,
                 category: newItem.category?.trim() || 'Generative AI',
                 published: Boolean(newItem.published),
-                published_at: newItem.published_at || new Date().toISOString()
+                published_at: newItem.published_at || new Date().toISOString(),
+                video_duration_seconds: newItem.video_duration_seconds ?? null,
+                video_duration_checked_at: newItem.video_duration_checked_at ?? null
             };
 
             const { data, error: insertError } = await supabase
