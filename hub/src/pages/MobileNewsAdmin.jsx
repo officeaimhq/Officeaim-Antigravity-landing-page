@@ -223,8 +223,7 @@ const MobileNewsAdmin = ({ profile }) => {
                 category: finalCategory,
                 youtube_url: finalYouTubeUrl,
                 description: formData.description.trim(),
-                published: formData.published,
-                published_at: new Date().toISOString()
+                published: formData.published
             };
 
             if (editingId) {
@@ -237,9 +236,10 @@ const MobileNewsAdmin = ({ profile }) => {
                 toast.success('Transmission updated live!', { icon: '✅' });
                 setEditingId(null);
             } else {
+                // Only a new item gets a publication date; editing keeps the original one.
                 const { error } = await supabase
                     .from('news')
-                    .insert([payload]);
+                    .insert([{ ...payload, published_at: new Date().toISOString() }]);
 
                 if (error) throw error;
                 toast.success('🚀 Transmission published to Newsroom!', { icon: '🔥' });
