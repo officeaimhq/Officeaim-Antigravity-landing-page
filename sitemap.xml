@@ -165,4 +165,18 @@
     <priority>0.6</priority>
   </url>
 
+  <url>
+    <loc>https://officeaimhq.netlify.app/news/mai-dxo</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://officeaimhq.netlify.app/news/gemini-omni</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
 </urlset>
